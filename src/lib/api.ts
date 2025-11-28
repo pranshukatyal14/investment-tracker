@@ -1,6 +1,6 @@
 import { Investment, Category, MonthlyBudget } from "@/types/investment";
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = 'https://investment-tracker-7nx8.onrender.com';
 
 export const api = {
   // Investments
