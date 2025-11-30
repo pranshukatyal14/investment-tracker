@@ -95,12 +95,14 @@ export const api = {
   },
   
   setBudget: async (budget: MonthlyBudget): Promise<MonthlyBudget> => {
+    console.log('📤 API sending to server:', budget);
     const response = await fetch(`${API_BASE}/budgets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(budget)
     });
     const data = await response.json();
+      console.log('📥 API received from server:', data);
     return {
       ...data,
       id: data._id

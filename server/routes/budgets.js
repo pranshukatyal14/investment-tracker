@@ -3,6 +3,11 @@ import Budget from '../models/Budget.js';
 import Investment from '../models/Investment.js';
 
 const router = express.Router();
+// Add this test route before the existing routes
+router.get('/test', (req, res) => {
+  console.log('🧪 Test endpoint hit');
+  res.json({ message: 'Server is working', timestamp: new Date() });
+});
 
 // Get budget with category allocations
 router.get('/:month', async (req, res) => {
@@ -42,14 +47,17 @@ router.get('/:month', async (req, res) => {
 // Set budget with category allocations
 router.post('/', async (req, res) => {
   try {
-    const { month, totalAmount, categoryAllocations } = req.body;
+        console.log('📥 Received budget data:', req.body);
+
+const { month, totalAmount, totalCarryOver, categoryAllocations } = req.body;
     
     const budget = await Budget.findOneAndUpdate(
       { month },
-      { totalAmount, categoryAllocations },
+{ totalAmount, totalCarryOver, categoryAllocations },
+
       { upsert: true, new: true }
     );
-    
+    console.log('💾 Saved budget:', budget);
     res.json(budget);
   } catch (error) {
     res.status(400).json({ error: error.message });

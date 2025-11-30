@@ -290,12 +290,16 @@ const [carryOver, setCarryOver] = useState(budget?.totalCarryOver?.toString() ||
     //   totalCarryOver: carryOverAmount,
     // });
 // So the onSetBudget call becomes:
-onSetBudget({
+const budgetData = {
   month: currentMonth,
   totalAmount: budgetAmount,
   categoryAllocations: [],
   totalCarryOver: carryOverAmount,
-});
+};
+
+console.log('🚀 BudgetManager sending:', budgetData);
+onSetBudget(budgetData);
+
     setOpen(false);
     toast.success("Budget updated successfully!");
   };
