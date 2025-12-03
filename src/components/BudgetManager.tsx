@@ -7,6 +7,121 @@ import { PieChart, Wallet } from "lucide-react";
 import { Category, MonthlyBudget } from "@/types/investment";
 import { toast } from "sonner";
 
+interface CategoryBudgetManagerProps {
+  currentMonth: string;
+  budget: MonthlyBudget | null;
+  categories: Category[];
+  onSetBudget: (budget: MonthlyBudget) => void;
+}
+
+export function CategoryBudgetManager({ currentMonth, budget, categories, onSetBudget }: CategoryBudgetManagerProps) {
+  const [open, setOpen] = useState(false);
+  const [totalAmount, setTotalAmount] = useState("");
+  const [allocations, setAllocations] = useState<Record<string, string>>({});
+
+  const handleAllocationChange = (categoryName: string, value: string) => {
+    setAllocations(prev => ({
+      ...prev,
+      [categoryName]: value
+    }));
+  };
+
+  const totalAllocated = Object.values(allocations).reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const categoryAllocations = categories.map(cat => ({
+      categoryName: cat.name,
+      allocatedAmount: parseFloat(allocations[cat.name]) || 0,
+      carryOver: 0,
+      spent: 0,
+      remaining: parseFloat(allocations[cat.name]) || 0
+    }));
+
+    onSetBudget({
+      month: currentMonth,
+      totalAmount: parseFloat(totalAmount),
+      categoryAllocations,
+      totalCarryOver: 0
+    });
+
+    setOpen(false);
+    toast.success("Category budget set successfully!");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <PieChart className="mr-2 h-4 w-4" />
+          Category Budget
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Set Category-wise Budget</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="total-budget">Total Monthly Budget (₹)</Label>
+            <Input
+              id="total-budget"
+              type="number"
+              step="0.01"
+              placeholder="Enter total budget"
+              value={totalAmount}
+              onChange={(e) => setTotalAmount(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="space-y-4">
+            <Label>Category Allocations</Label>
+            {categories.map((category) => (
+              <div key={category.id} className="flex items-center gap-4 p-3 border rounded">
+                <div className="flex items-center gap-2 flex-1">
+                  <div
+                    className="h-4 w-4 rounded-full"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className="font-medium">{category.name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={allocations[category.name] || ""}
+                    onChange={(e) => handleAllocationChange(category.name, e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">₹</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Total Allocated:</span>
+              <span className="text-lg font-bold">₹{totalAllocated.toLocaleString("en-IN")}</span>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1">
+              Save Budget
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // interface CategoryBudgetManagerProps {
 //   currentMonth: string;

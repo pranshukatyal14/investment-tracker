@@ -38,18 +38,25 @@ export interface MonthlyBudget {
   categoryAllocations: CategoryAllocation[];
   totalCarryOver: number;
 }
+export interface CategoryBreakdown {
+  category: string;
+  subcategory?: string;
+  amount: number;
+  percentage: number;
+  color: string;
+}
 
 export interface InvestmentStats {
   totalInvested: number;
   remainingBudget: number;
   totalBudget: number;
+  categoryBreakdown: CategoryBreakdown[];
   carryOver: number;
   categoryAllocations: CategoryAllocation[];
-  categoryBreakdown: {
-    category: string;
-    subcategory?: string;
-    amount: number;
-    percentage: number;
-    color: string;
-  }[];
+  // Add these:
+  spentFromCarryover: number;
+  spentFromCurrentBudget: number;
+  remainingCarryover: number;
+  remainingCurrentBudget: number;
+  currentMonthBudget: number;
 }
