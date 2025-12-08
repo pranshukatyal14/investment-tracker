@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PieChart, Wallet } from "lucide-react";
+import { PieChart, Wallet,ArrowRightLeft } from "lucide-react";
 import { Category, MonthlyBudget } from "@/types/investment";
 import { toast } from "sonner";
 
@@ -252,7 +252,132 @@ export function CategoryBudgetManager({ currentMonth, budget, categories, onSetB
 // }
 
 
+// Add this new CarryoverManager component
+export function CarryoverManager({ currentMonth, budget, categories, onSetBudget }: {
+  currentMonth: string;
+  budget: MonthlyBudget | null;
+  categories: Category[];
+  onSetBudget: (budget: MonthlyBudget) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [totalCarryover, setTotalCarryover] = useState("");
+  const [categoryCarryovers, setCategoryCarryovers] = useState<Record<string, string>>({});
 
+  const handleCategoryCarryoverChange = (categoryName: string, value: string) => {
+    setCategoryCarryovers(prev => ({
+      ...prev,
+      [categoryName]: value
+    }));
+  };
+
+  const totalAllocated = Object.values(categoryCarryovers).reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+  const remaining = parseFloat(totalCarryover || "0") - totalAllocated;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (remaining !== 0) {
+      toast.error(`Total allocation must equal total carryover. Remaining: ₹${remaining}`);
+      return;
+    }
+
+    const categoryAllocations = categories.map(cat => ({
+      categoryName: cat.name,
+      allocatedAmount: parseFloat(categoryCarryovers[cat.name]) || 0,
+      carryOver: parseFloat(categoryCarryovers[cat.name]) || 0,
+      spent: 0,
+      remaining: parseFloat(categoryCarryovers[cat.name]) || 0
+    }));
+
+    onSetBudget({
+      month: currentMonth,
+      totalAmount: 0,
+      categoryAllocations,
+      totalCarryOver: parseFloat(totalCarryover),
+    });
+
+    setOpen(false);
+    toast.success("Carryover allocated successfully!");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <ArrowRightLeft className="mr-2 h-4 w-4" />
+          Allocate Carryover
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Allocate Carryover by Category</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="total-carryover">Total Carryover Amount (₹)</Label>
+            <Input
+              id="total-carryover"
+              type="number"
+              step="0.01"
+              placeholder="Enter total carryover amount"
+              value={totalCarryover}
+              onChange={(e) => setTotalCarryover(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="space-y-4">
+            <Label>Category Allocations</Label>
+            {categories.map((category) => (
+              <div key={category.id} className="flex items-center gap-4 p-3 border rounded">
+                <div className="flex items-center gap-2 flex-1">
+                  <div
+                    className="h-4 w-4 rounded-full"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className="font-medium">{category.name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={categoryCarryovers[category.name] || ""}
+                    onChange={(e) => handleCategoryCarryoverChange(category.name, e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">₹</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Total Allocated:</span>
+              <span className="text-lg font-bold">₹{totalAllocated.toLocaleString("en-IN")}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Remaining:</span>
+              <span className={`text-lg font-bold ${remaining === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ₹{remaining.toLocaleString("en-IN")}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1" disabled={remaining !== 0}>
+              Allocate Carryover
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 // Keep the original BudgetManager for backward compatibility
 export function BudgetManager({ currentMonth, budget, onSetBudget }: {
   currentMonth: string;
@@ -357,6 +482,135 @@ onSetBudget(budgetData);
             </Button>
             <Button type="submit" className="flex-1 bg-gradient-success hover:opacity-90">
               Save Budget
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+
+export function CarryoverEditDialog({ 
+  currentMonth, 
+  budget, 
+  categories, 
+  onSetBudget, 
+  open, 
+  onOpenChange ,
+    remainingCarryover // Add this prop
+
+}: {
+  currentMonth: string;
+  budget: MonthlyBudget | null;
+  categories: Category[];
+  onSetBudget: (budget: MonthlyBudget) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+    remainingCarryover: number; // Add this prop
+
+}) {
+  const [categoryCarryovers, setCategoryCarryovers] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    budget?.categoryAllocations?.forEach(alloc => {
+      initial[alloc.categoryName] = alloc.carryOver?.toString() || "0";
+    });
+    return initial;
+  });
+
+  const totalAllocated = Object.values(categoryCarryovers).reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+  const totalCarryover = remainingCarryover;
+  const remaining = totalCarryover - totalAllocated;
+
+  const handleCategoryCarryoverChange = (categoryName: string, value: string) => {
+    setCategoryCarryovers(prev => ({
+      ...prev,
+      [categoryName]: value
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (Math.abs(remaining) > 0.01) {
+      toast.error(`Total allocation must equal total carryover. Remaining: ₹${remaining.toFixed(2)}`);
+      return;
+    }
+
+    const updatedCategoryAllocations = (budget?.categoryAllocations || []).map(allocation => ({
+      ...allocation,
+      carryOver: parseFloat(categoryCarryovers[allocation.categoryName]) || 0,
+    }));
+
+    onSetBudget({
+      ...budget!,
+      categoryAllocations: updatedCategoryAllocations,
+    });
+
+    onOpenChange(false);
+    toast.success("Carryover allocation updated successfully!");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Edit Carryover Allocation</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+            <div className="flex justify-between items-center">
+              <span className="font-medium text-blue-800">Total Carryover Available</span>
+              <span className="font-bold text-blue-800">₹{totalCarryover.toLocaleString("en-IN")}</span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <Label>Allocate to Categories</Label>
+            {categories.map((category) => (
+              <div key={category.id} className="flex items-center gap-4 p-3 border rounded">
+                <div className="flex items-center gap-2 flex-1">
+                  <div
+                    className="h-4 w-4 rounded-full"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className="font-medium">{category.name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={categoryCarryovers[category.name] || ""}
+                    onChange={(e) => handleCategoryCarryoverChange(category.name, e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">₹</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Total Allocated:</span>
+              <span className="text-lg font-bold">₹{totalAllocated.toLocaleString("en-IN")}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Remaining:</span>
+              <span className={`text-lg font-bold ${Math.abs(remaining) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
+                ₹{remaining.toLocaleString("en-IN")}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1" disabled={Math.abs(remaining) > 0.01}>
+              Update Allocation
             </Button>
           </div>
         </form>

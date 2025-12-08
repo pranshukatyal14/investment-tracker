@@ -4,7 +4,7 @@ import { LayoutDashboard, Calendar, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddInvestmentDialog } from "@/components/AddInvestmentDialog";
 import { CategoryManager } from "@/components/CategoryManager";
-import { BudgetManager, CategoryBudgetManager } from "@/components/BudgetManager";
+import { BudgetManager, CategoryBudgetManager, CarryoverManager, CarryoverEditDialog } from "@/components/BudgetManager";
 import { DashboardView } from "@/components/DashboardView";
 import { CalendarView } from "@/components/CalendarView";
 import { AnalyticsView } from "@/components/AnalyticsView";
@@ -21,248 +21,310 @@ const Index = () => {
   const [currentBudget, setCurrentBudget] = useState<MonthlyBudget | null>(null);
   const [prevBudget, setPrevBudget] = useState<MonthlyBudget | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showEditCarryover, setShowEditCarryover] = useState(false);
+
 
   const currentMonth = format(new Date(), "yyyy-MM");
 
-useEffect(() => {
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const prevMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), "yyyy-MM");
-      
-      console.log('🔄 Loading data for:', currentMonth);
-      console.log('📅 Previous month:', prevMonth);
-      
-      const [investmentsData, categoriesData, currentBudgetData, prevBudgetData] = await Promise.all([
-        api.getInvestments(),
-        api.getCategories(),
-        api.getBudgetForMonth(currentMonth),
-        api.getBudgetForMonth(prevMonth)
-      ]);
-      
-      console.log('💰 Current budget exists:', !!currentBudgetData);
-      console.log('📊 Previous budget exists:', !!prevBudgetData);
-      
-      setInvestments(investmentsData);
-      setCategories(categoriesData);
-      
-      if (!currentBudgetData) {
-  console.log('🚀 Auto-creating budget with carryover...');
-  
-  // Find the most recent budget (could be previous month or further back)
-  let recentBudget = prevBudgetData;
-  let recentMonth = prevMonth;
-  
-  // If no immediate previous month budget, look further back
-  if (!recentBudget) {
-    for (let i = 2; i <= 12; i++) { // Look back up to 12 months
-      const checkMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - i, 1), "yyyy-MM");
-      const checkBudget = await api.getBudgetForMonth(checkMonth);
-      if (checkBudget) {
-        recentBudget = checkBudget;
-        recentMonth = checkMonth;
-        break;
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const prevMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), "yyyy-MM");
+
+        console.log('🔄 Loading data for:', currentMonth);
+        console.log('📅 Previous month:', prevMonth);
+
+        const [investmentsData, categoriesData, currentBudgetData, prevBudgetData] = await Promise.all([
+          api.getInvestments(),
+          api.getCategories(),
+          api.getBudgetForMonth(currentMonth),
+          api.getBudgetForMonth(prevMonth)
+        ]);
+
+        console.log('💰 Current budget exists:', !!currentBudgetData);
+        console.log('📊 Previous budget exists:', !!prevBudgetData);
+
+        setInvestments(investmentsData);
+        setCategories(categoriesData);
+
+        if (!currentBudgetData) {
+          console.log('🚀 Auto-creating budget with carryover...');
+
+          // Find the most recent budget (could be previous month or further back)
+          let recentBudget = prevBudgetData;
+          let recentMonth = prevMonth;
+
+          // If no immediate previous month budget, look further back
+          if (!recentBudget) {
+            for (let i = 2; i <= 12; i++) { // Look back up to 12 months
+              const checkMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - i, 1), "yyyy-MM");
+              const checkBudget = await api.getBudgetForMonth(checkMonth);
+              if (checkBudget) {
+                recentBudget = checkBudget;
+                recentMonth = checkMonth;
+                break;
+              }
+            }
+          }
+
+          if (recentBudget) {
+            const recentInvestments = investmentsData.filter(
+              (inv) => format(inv.date, "yyyy-MM") === recentMonth
+            );
+            const recentSpent = recentInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+            const recentTotal = (recentBudget.totalAmount || 0) + (recentBudget.totalCarryOver || 0);
+            const carryover = Math.max(0, recentTotal - recentSpent);
+
+            console.log('💸 Recent spent:', recentSpent);
+            console.log('💵 Recent total:', recentTotal);
+            console.log('🔄 Calculated carryover:', carryover);
+
+            if (carryover > 0) {
+              // Copy category allocations with updated carryovers
+              const updatedCategoryAllocations = (recentBudget.categoryAllocations || []).map(allocation => {
+                const categoryInvestments = recentInvestments.filter(inv => inv.category === allocation.categoryName);
+                const categorySpent = categoryInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+                const categoryCarryover = Math.max(0, allocation.allocatedAmount - categorySpent);
+
+                return {
+                  categoryName: allocation.categoryName,
+                  allocatedAmount: allocation.allocatedAmount,
+                  carryOver: categoryCarryover,
+                  spent: 0,
+                  remaining: allocation.allocatedAmount + categoryCarryover
+                };
+              });
+
+              const newBudget = {
+                month: currentMonth,
+                totalAmount: recentBudget.totalAmount,
+                totalCarryOver: carryover,
+                categoryAllocations: updatedCategoryAllocations
+              };
+
+              console.log('📝 Creating budget:', newBudget);
+              const createdBudget = await api.setBudget(newBudget);
+              console.log('✅ Budget created successfully:', createdBudget);
+              setCurrentBudget(createdBudget);
+            } else {
+              console.log('❌ No carryover to create budget');
+              setCurrentBudget(null);
+            }
+          } else {
+            console.log('📋 No previous budget found');
+            setCurrentBudget(null);
+          }
+        } else {
+          console.log('📋 Using existing budget');
+          setCurrentBudget(currentBudgetData);
+        }
+
+
+        setPrevBudget(prevBudgetData);
+      } catch (error) {
+        console.error('❌ Failed to load data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [currentMonth]);
+
+  const calculateCarryOver = useMemo(() => {
+    // Get all previous months that have budgets or investments
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonthNum = currentDate.getMonth();
+
+    let totalCarryover = 0;
+
+    // Check all previous months from January to current month
+    for (let i = 0; i < currentMonthNum; i++) {
+      const checkMonth = format(new Date(currentYear, i, 1), "yyyy-MM");
+
+      // Get budget for this month
+      const monthBudget = checkMonth === format(new Date(currentYear, currentMonthNum - 1, 1), "yyyy-MM")
+        ? prevBudget
+        : null; // For now, only check immediate previous month
+
+      if (monthBudget) {
+        // Get investments for this month
+        const monthInvestments = investments.filter(
+          (inv) => format(inv.date, "yyyy-MM") === checkMonth
+        );
+
+        const monthSpent = monthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+        const monthTotal = (monthBudget.totalAmount || 0) + (monthBudget.totalCarryOver || 0);
+        const monthRemaining = monthTotal - monthSpent;
+
+        totalCarryover += Math.max(0, monthRemaining);
       }
     }
-  }
-  
-  if (recentBudget) {
-    const recentInvestments = investmentsData.filter(
-      (inv) => format(inv.date, "yyyy-MM") === recentMonth
-    );
-    const recentSpent = recentInvestments.reduce((sum, inv) => sum + inv.amount, 0);
-    const recentTotal = (recentBudget.totalAmount || 0) + (recentBudget.totalCarryOver || 0);
-    const carryover = Math.max(0, recentTotal - recentSpent);
-    
-    console.log('💸 Recent spent:', recentSpent);
-    console.log('💵 Recent total:', recentTotal);
-    console.log('🔄 Calculated carryover:', carryover);
-    
-    if (carryover > 0) {
-      // Copy category allocations with updated carryovers
-      const updatedCategoryAllocations = (recentBudget.categoryAllocations || []).map(allocation => {
-        const categoryInvestments = recentInvestments.filter(inv => inv.category === allocation.categoryName);
-        const categorySpent = categoryInvestments.reduce((sum, inv) => sum + inv.amount, 0);
-        const categoryCarryover = Math.max(0, allocation.allocatedAmount - categorySpent);
-        
-        return {
-          categoryName: allocation.categoryName,
-          allocatedAmount: allocation.allocatedAmount,
-          carryOver: categoryCarryover,
-          spent: 0,
-          remaining: allocation.allocatedAmount + categoryCarryover
-        };
-      });
 
-      const newBudget = {
-        month: currentMonth,
-        totalAmount: recentBudget.totalAmount,
-        totalCarryOver: carryover,
-        categoryAllocations: updatedCategoryAllocations
-      };
-      
-      console.log('📝 Creating budget:', newBudget);
-      const createdBudget = await api.setBudget(newBudget);
-      console.log('✅ Budget created successfully:', createdBudget);
-      setCurrentBudget(createdBudget);
-    } else {
-      console.log('❌ No carryover to create budget');
-      setCurrentBudget(null);
-    }
-  } else {
-    console.log('📋 No previous budget found');
-    setCurrentBudget(null);
-  }
-} else {
-  console.log('📋 Using existing budget');
-  setCurrentBudget(currentBudgetData);
-}
+    return totalCarryover;
+  }, [investments, prevBudget, currentMonth]);
 
-      
-      setPrevBudget(prevBudgetData);
-    } catch (error) {
-      console.error('❌ Failed to load data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // const stats: InvestmentStats = useMemo(() => {
+  //   const currentMonthInvestments = investments.filter(
+  //     (inv) => format(inv.date, "yyyy-MM") === currentMonth
+  //   );
 
-  loadData();
-}, [currentMonth]);
+  //   const totalInvested = currentMonthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
 
-const calculateCarryOver = useMemo(() => {
-  // Get all previous months that have budgets or investments
-  const currentDate = new Date();
-  const currentYear = currentDate.getFullYear();
-  const currentMonthNum = currentDate.getMonth();
-  
-  let totalCarryover = 0;
-  
-  // Check all previous months from January to current month
-  for (let i = 0; i < currentMonthNum; i++) {
-    const checkMonth = format(new Date(currentYear, i, 1), "yyyy-MM");
-    
-    // Get budget for this month
-    const monthBudget = checkMonth === format(new Date(currentYear, currentMonthNum - 1, 1), "yyyy-MM") 
-      ? prevBudget 
-      : null; // For now, only check immediate previous month
-    
-    if (monthBudget) {
-      // Get investments for this month
-      const monthInvestments = investments.filter(
-        (inv) => format(inv.date, "yyyy-MM") === checkMonth
-      );
-      
-      const monthSpent = monthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
-      const monthTotal = (monthBudget.totalAmount || 0) + (monthBudget.totalCarryOver || 0);
-      const monthRemaining = monthTotal - monthSpent;
-      
-      totalCarryover += Math.max(0, monthRemaining);
-    }
-  }
-  
-  return totalCarryover;
-}, [investments, prevBudget, currentMonth]);
+  //   // Calculate spending priority: carryover first, then current budget
+  //   const manualCarryOver = currentBudget?.totalCarryOver || 0;
+  //   const autoCarryOver = manualCarryOver > 0 ? manualCarryOver : calculateCarryOver;
+  //   const currentMonthBudget = currentBudget?.totalAmount || 0;
 
-// const stats: InvestmentStats = useMemo(() => {
-//   const currentMonthInvestments = investments.filter(
-//     (inv) => format(inv.date, "yyyy-MM") === currentMonth
-//   );
+  //   // Spending logic: use carryover first
+  //   const spentFromCarryover = Math.min(totalInvested, autoCarryOver);
+  //   const spentFromCurrentBudget = Math.max(0, totalInvested - autoCarryOver);
+  //   const remainingCarryover = Math.max(0, autoCarryOver - totalInvested);
+  //   const remainingCurrentBudget = Math.max(0, currentMonthBudget - spentFromCurrentBudget);
 
-//   const totalInvested = currentMonthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+  //   const totalBudget = currentMonthBudget + autoCarryOver;
+  //   const remainingBudget = remainingCarryover + remainingCurrentBudget;
 
-//   // Calculate spending priority: carryover first, then current budget
-//   const manualCarryOver = currentBudget?.totalCarryOver || 0;
-//   const autoCarryOver = manualCarryOver > 0 ? manualCarryOver : calculateCarryOver;
-//   const currentMonthBudget = currentBudget?.totalAmount || 0;
+  //   // Calculate category breakdown
+  //   const categoryMap = new Map<string, { amount: number; category: string; subcategory?: string }>();
+  //   currentMonthInvestments.forEach((inv) => {
+  //     const key = inv.subcategory ? `${inv.category}-${inv.subcategory}` : inv.category;
+  //     const current = categoryMap.get(key) || { amount: 0, category: inv.category, subcategory: inv.subcategory };
+  //     categoryMap.set(key, { 
+  //       amount: current.amount + inv.amount, 
+  //       category: inv.category, 
+  //       subcategory: inv.subcategory 
+  //     });
+  //   });
 
-//   // Spending logic: use carryover first
-//   const spentFromCarryover = Math.min(totalInvested, autoCarryOver);
-//   const spentFromCurrentBudget = Math.max(0, totalInvested - autoCarryOver);
-//   const remainingCarryover = Math.max(0, autoCarryOver - totalInvested);
-//   const remainingCurrentBudget = Math.max(0, currentMonthBudget - spentFromCurrentBudget);
+  //   const categoryBreakdown = Array.from(categoryMap.entries()).map(
+  //     ([key, data]) => {
+  //       const categoryData = categories.find((c) => c.name === data.category);
+  //       return {
+  //         category: data.category,
+  //         subcategory: data.subcategory,
+  //         amount: data.amount,
+  //         percentage: totalInvested > 0 ? (data.amount / totalInvested) * 100 : 0,
+  //         color: categoryData?.color || "#6b7280",
+  //       };
+  //     }
+  //   );
 
-//   const totalBudget = currentMonthBudget + autoCarryOver;
-//   const remainingBudget = remainingCarryover + remainingCurrentBudget;
+  //   // Calculate category-wise spending with carryover priority
+  //   const updatedCategoryAllocations = (currentBudget?.categoryAllocations || []).map(allocation => {
+  //     const categorySpent = categoryBreakdown.find(cb => cb.category === allocation.categoryName)?.amount || 0;
 
-//   // Calculate category breakdown
-//   const categoryMap = new Map<string, { amount: number; category: string; subcategory?: string }>();
-//   currentMonthInvestments.forEach((inv) => {
-//     const key = inv.subcategory ? `${inv.category}-${inv.subcategory}` : inv.category;
-//     const current = categoryMap.get(key) || { amount: 0, category: inv.category, subcategory: inv.subcategory };
-//     categoryMap.set(key, { 
-//       amount: current.amount + inv.amount, 
-//       category: inv.category, 
-//       subcategory: inv.subcategory 
-//     });
-//   });
+  //     // Get previous month's carryover for this category (from prevBudget)
+  //     const prevAllocation = prevBudget?.categoryAllocations?.find(prev => prev.categoryName === allocation.categoryName);
+  //     const categoryCarryover = prevAllocation ? Math.max(0, prevAllocation.allocatedAmount - (prevAllocation.spent || 0)) : 0;
 
-//   const categoryBreakdown = Array.from(categoryMap.entries()).map(
-//     ([key, data]) => {
-//       const categoryData = categories.find((c) => c.name === data.category);
-//       return {
-//         category: data.category,
-//         subcategory: data.subcategory,
-//         amount: data.amount,
-//         percentage: totalInvested > 0 ? (data.amount / totalInvested) * 100 : 0,
-//         color: categoryData?.color || "#6b7280",
-//       };
-//     }
-//   );
+  //     // Spending priority: use carryover first, then current month allocation
+  //     const spentFromCategoryCarryover = Math.min(categorySpent, categoryCarryover);
+  //     const spentFromCurrentAllocation = Math.max(0, categorySpent - categoryCarryover);
 
-//   // Calculate category-wise spending with carryover priority
-//   const updatedCategoryAllocations = (currentBudget?.categoryAllocations || []).map(allocation => {
-//     const categorySpent = categoryBreakdown.find(cb => cb.category === allocation.categoryName)?.amount || 0;
-    
-//     // Get previous month's carryover for this category (from prevBudget)
-//     const prevAllocation = prevBudget?.categoryAllocations?.find(prev => prev.categoryName === allocation.categoryName);
-//     const categoryCarryover = prevAllocation ? Math.max(0, prevAllocation.allocatedAmount - (prevAllocation.spent || 0)) : 0;
-    
-//     // Spending priority: use carryover first, then current month allocation
-//     const spentFromCategoryCarryover = Math.min(categorySpent, categoryCarryover);
-//     const spentFromCurrentAllocation = Math.max(0, categorySpent - categoryCarryover);
-    
-//     const remainingCategoryCarryover = categoryCarryover - spentFromCategoryCarryover;
-//     const remainingCurrentAllocation = allocation.allocatedAmount - spentFromCurrentAllocation;
-    
-//     return {
-//       ...allocation,
-//       carryOver: remainingCategoryCarryover,
-//       spent: categorySpent,
-//       remaining: remainingCurrentAllocation + remainingCategoryCarryover
-//     };
-//   });
+  //     const remainingCategoryCarryover = categoryCarryover - spentFromCategoryCarryover;
+  //     const remainingCurrentAllocation = allocation.allocatedAmount - spentFromCurrentAllocation;
 
-//   return {
-//     totalInvested,
-//     remainingBudget,
-//     totalBudget,
-//     categoryBreakdown,
-//     carryOver: updatedCategoryAllocations.reduce((total, alloc) => total + alloc.carryOver, 0),
-//     categoryAllocations: updatedCategoryAllocations,
-//     spentFromCarryover,
-//     spentFromCurrentBudget,
-//     remainingCarryover,
-//     remainingCurrentBudget,
-//     currentMonthBudget,
-//   };
-// }, [investments, categories, currentBudget, currentMonth, calculateCarryOver]);
+  //     return {
+  //       ...allocation,
+  //       carryOver: remainingCategoryCarryover,
+  //       spent: categorySpent,
+  //       remaining: remainingCurrentAllocation + remainingCategoryCarryover
+  //     };
+  //   });
+
+  //   return {
+  //     totalInvested,
+  //     remainingBudget,
+  //     totalBudget,
+  //     categoryBreakdown,
+  //     carryOver: updatedCategoryAllocations.reduce((total, alloc) => total + alloc.carryOver, 0),
+  //     categoryAllocations: updatedCategoryAllocations,
+  //     spentFromCarryover,
+  //     spentFromCurrentBudget,
+  //     remainingCarryover,
+  //     remainingCurrentBudget,
+  //     currentMonthBudget,
+  //   };
+  // }, [investments, categories, currentBudget, currentMonth, calculateCarryOver]);
 
   // Handlers
-  
-  const stats: InvestmentStats = useMemo(() => {
-console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2));
 
+  // const stats: InvestmentStats = useMemo(() => {
+  //   console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2));
+
+  //   const currentMonthInvestments = investments.filter(
+  //     (inv) => format(inv.date, "yyyy-MM") === currentMonth
+  //   );
+
+  //   const totalInvested = currentMonthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+
+  //   // Use manual carryover directly from budget
+  //   const currentMonthBudget = currentBudget?.totalAmount || 0;
+  //   const totalCarryOver = currentBudget?.totalCarryOver || 0;
+  //   console.log('💰 Budget values:', { currentMonthBudget, totalCarryOver });
+
+  //   // Spending logic: use carryover first
+  //   const spentFromCarryover = Math.min(totalInvested, totalCarryOver);
+  //   const spentFromCurrentBudget = Math.max(0, totalInvested - totalCarryOver);
+  //   const remainingCarryover = Math.max(0, totalCarryOver - totalInvested);
+  //   const remainingCurrentBudget = Math.max(0, currentMonthBudget - spentFromCurrentBudget);
+
+  //   const totalBudget = currentMonthBudget + totalCarryOver;
+  //   const remainingBudget = remainingCarryover + remainingCurrentBudget;
+
+  //   // Calculate category breakdown
+  //   const categoryMap = new Map<string, { amount: number; category: string; subcategory?: string }>();
+  //   currentMonthInvestments.forEach((inv) => {
+  //     const key = inv.subcategory ? `${inv.category}-${inv.subcategory}` : inv.category;
+  //     const current = categoryMap.get(key) || { amount: 0, category: inv.category, subcategory: inv.subcategory };
+  //     categoryMap.set(key, {
+  //       amount: current.amount + inv.amount,
+  //       category: inv.category,
+  //       subcategory: inv.subcategory
+  //     });
+  //   });
+
+  //   const categoryBreakdown = Array.from(categoryMap.entries()).map(
+  //     ([key, data]) => {
+  //       const categoryData = categories.find((c) => c.name === data.category);
+  //       return {
+  //         category: data.category,
+  //         subcategory: data.subcategory,
+  //         amount: data.amount,
+  //         percentage: totalInvested > 0 ? (data.amount / totalInvested) * 100 : 0,
+  //         color: categoryData?.color || "#6b7280",
+  //       };
+  //     }
+  //   );
+
+  //   return {
+  //     totalInvested,
+  //     remainingBudget,
+  //     totalBudget,
+  //     categoryBreakdown,
+  //     carryOver: totalCarryOver,
+  //     categoryAllocations: [],
+  //     spentFromCarryover,
+  //     spentFromCurrentBudget,
+  //     remainingCarryover,
+  //     remainingCurrentBudget,
+  //     currentMonthBudget,
+  //   };
+  // }, [investments, categories, currentBudget, currentMonth]);
+
+
+const stats: InvestmentStats = useMemo(() => {
   const currentMonthInvestments = investments.filter(
     (inv) => format(inv.date, "yyyy-MM") === currentMonth
   );
 
   const totalInvested = currentMonthInvestments.reduce((sum, inv) => sum + inv.amount, 0);
 
-  // Use manual carryover directly from budget
   const currentMonthBudget = currentBudget?.totalAmount || 0;
   const totalCarryOver = currentBudget?.totalCarryOver || 0;
-  console.log('💰 Budget values:', { currentMonthBudget, totalCarryOver });
 
   // Spending logic: use carryover first
   const spentFromCarryover = Math.min(totalInvested, totalCarryOver);
@@ -278,10 +340,10 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
   currentMonthInvestments.forEach((inv) => {
     const key = inv.subcategory ? `${inv.category}-${inv.subcategory}` : inv.category;
     const current = categoryMap.get(key) || { amount: 0, category: inv.category, subcategory: inv.subcategory };
-    categoryMap.set(key, { 
-      amount: current.amount + inv.amount, 
-      category: inv.category, 
-      subcategory: inv.subcategory 
+    categoryMap.set(key, {
+      amount: current.amount + inv.amount,
+      category: inv.category,
+      subcategory: inv.subcategory
     });
   });
 
@@ -298,13 +360,29 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
     }
   );
 
+  // Calculate category-wise allocations with carryover tracking
+  const updatedCategoryAllocations = (currentBudget?.categoryAllocations || []).map(allocation => {
+    const categorySpent = categoryBreakdown.find(cb => cb.category === allocation.categoryName)?.amount || 0;
+
+    // Calculate remaining carryover for this category
+    const categoryCarryoverRemaining = Math.max(0, allocation.carryOver - categorySpent);
+    const categoryCurrentRemaining = Math.max(0, allocation.allocatedAmount - Math.max(0, categorySpent - allocation.carryOver));
+
+    return {
+      ...allocation,
+      carryOver: categoryCarryoverRemaining,
+      spent: categorySpent,
+      remaining: categoryCarryoverRemaining + categoryCurrentRemaining
+    };
+  });
+
   return {
     totalInvested,
     remainingBudget,
     totalBudget,
     categoryBreakdown,
-    carryOver: totalCarryOver,
-    categoryAllocations: [],
+    carryOver: remainingCarryover, // Show remaining carryover, not total
+    categoryAllocations: updatedCategoryAllocations,
     spentFromCarryover,
     spentFromCurrentBudget,
     remainingCarryover,
@@ -313,7 +391,8 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
   };
 }, [investments, categories, currentBudget, currentMonth]);
 
-  
+
+
   const handleAddInvestment = async (investment: Omit<Investment, "id">) => {
     try {
       await api.addInvestment(investment);
@@ -387,6 +466,9 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
       </div>
     );
   }
+  const handleEditCarryover = () => {
+    setShowEditCarryover(true);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -425,6 +507,12 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
                 <AddInvestmentDialog
                   categories={categories}
                   onAdd={handleAddInvestment}
+                />
+                <CarryoverManager
+                  currentMonth={currentMonth}
+                  budget={currentBudget}
+                  categories={categories}
+                  onSetBudget={handleSetBudget}
                 />
               </div>
             </div>
@@ -467,20 +555,20 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Analytics
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={async () => {
                   const prevMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), "yyyy-MM");
                   const currentBudgetData = await api.getBudgetForMonth(currentMonth);
                   const prevBudgetData = await api.getBudgetForMonth(prevMonth);
-                  
+
                   console.log('Current Month:', currentMonth);
                   console.log('Previous Month:', prevMonth);
                   console.log('Current Budget exists:', !!currentBudgetData);
                   console.log('Previous Budget exists:', !!prevBudgetData);
                   console.log('Previous Budget data:', prevBudgetData);
-                  
+
                   if (!currentBudgetData && prevBudgetData) {
                     console.log('Should auto-create budget');
                     const prevInvestments = investments.filter(
@@ -491,18 +579,12 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
                     const carryover = Math.max(0, prevTotal - prevSpent);
                     console.log('Calculated carryover:', carryover);
                   }
-                  
+
                   alert(`Current: ${currentMonth}\nPrev: ${prevMonth}\nCurrent Budget: ${!!currentBudgetData}\nPrev Budget: ${!!prevBudgetData}`);
                 }}
               >
                 Debug
               </Button>
-              
-
-              
-
-
-
 
             </div>
           </div>
@@ -518,6 +600,7 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
             categories={categories}
             currentMonthInvestmentCount={currentMonthInvestmentCount}
             onDelete={handleDeleteInvestment}
+            onEditCarryover={handleEditCarryover}
           />
         )}
 
@@ -535,6 +618,20 @@ console.log('🔍 Debug currentBudget:', JSON.stringify(currentBudget, null, 2))
           />
         )}
       </main>
+      {/* Add this after the </main> tag and before the final </div> */}
+      {showEditCarryover && (
+        <CarryoverEditDialog
+          currentMonth={currentMonth}
+          budget={currentBudget}
+          categories={categories}
+          onSetBudget={handleSetBudget}
+          open={showEditCarryover}
+          onOpenChange={setShowEditCarryover}
+              remainingCarryover={stats.remainingCarryover}
+
+        />
+      )}
+
     </div>
   );
 };

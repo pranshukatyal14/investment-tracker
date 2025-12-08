@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Investment, Category } from "@/types/investment";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 
 interface CalendarViewProps {
   investments: Investment[];
@@ -13,6 +15,9 @@ interface CalendarViewProps {
 
 export function CalendarView({ investments, categories }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
+   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showDayDetails, setShowDayDetails] = useState(false);
+
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -31,6 +36,10 @@ export function CalendarView({ investments, categories }: CalendarViewProps) {
   const getDayTotal = (day: Date) => {
     return getInvestmentsForDay(day).reduce((sum, inv) => sum + inv.amount, 0);
   };
+  const handleDayClick = (day: Date) => {
+    setSelectedDate(day);
+    setShowDayDetails(true);
+  };
 
   const getCategoryColor = (categoryName: string) => {
     return categories.find(cat => cat.name === categoryName)?.color || "#6b7280";
@@ -43,6 +52,10 @@ export function CalendarView({ investments, categories }: CalendarViewProps) {
   const isToday = (day: Date) => {
     return isSameDay(day, new Date());
   };
+
+  const selectedDayInvestments = selectedDate ? getInvestmentsForDay(selectedDate) : [];
+  const selectedDayTotal = selectedDate ? getDayTotal(selectedDate) : 0;
+
 
   return (
     <div className="space-y-6">
@@ -105,6 +118,7 @@ export function CalendarView({ investments, categories }: CalendarViewProps) {
                   isToday(day) && "ring-2 ring-success",
                   hasInvestments && "bg-success/5"
                 )}
+                onClick={() => handleDayClick(day)}
               >
                 <div className="space-y-1">
                   <div className={cn(
@@ -180,6 +194,73 @@ export function CalendarView({ investments, categories }: CalendarViewProps) {
           </div>
         </div>
       </Card>
+
+      {/* Day Details Modal */}
+      <Dialog open={showDayDetails} onOpenChange={setShowDayDetails}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              Investments on {selectedDate && format(selectedDate, "MMMM d, yyyy")}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedDayInvestments.length > 0 ? (
+            <div className="space-y-4">
+              {/* Total for the day */}
+              <div className="p-4 bg-success/10 border border-success/20 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">Total Invested</span>
+                  <span className="text-xl font-bold text-success">
+                    ₹{selectedDayTotal.toLocaleString("en-IN")}
+                  </span>
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  {selectedDayInvestments.length} transaction{selectedDayInvestments.length > 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {/* Investment list */}
+              <div className="space-y-3">
+                <h4 className="font-medium">Investment Details</h4>
+                {selectedDayInvestments.map((investment, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="h-4 w-4 rounded-full"
+                        style={{ backgroundColor: getCategoryColor(investment.category) }}
+                      />
+                      <div>
+                        <div className="font-medium">
+                          {investment.subcategory 
+                            ? `${investment.category} - ${investment.subcategory}` 
+                            : investment.category}
+                        </div>
+                        {investment.notes && (
+                          <div className="text-sm text-muted-foreground">
+                            {investment.notes}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">
+                        ₹{investment.amount.toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {format(investment.date, "h:mm a")}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No investments made on this day</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
