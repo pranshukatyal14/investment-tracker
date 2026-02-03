@@ -60,3 +60,34 @@ export interface InvestmentStats {
   remainingCurrentBudget: number;
   currentMonthBudget: number;
 }
+
+export interface Dividend {
+  id: string;
+  amount: number;
+  company: string;
+  stockSymbol: string;
+  date: Date;
+  notes?: string;
+}
+
+export interface CompanyDividend {
+  company: string;
+  stockSymbol: string;
+  amount: number;
+  percentage: number;
+  color: string;
+  transactionCount: number;
+}
+
+export interface DividendStats {
+  totalDividends: number;
+  currentMonthDividends: number;
+  currentYearDividends: number;
+  averagePerMonth: number;
+  companyBreakdown: CompanyDividend[];
+  topPayingStock: {
+    company: string;
+    stockSymbol: string;
+    amount: number;
+  } | null;
+}

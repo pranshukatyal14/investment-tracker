@@ -1,22 +1,26 @@
 import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
-import { LayoutDashboard, Calendar, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Calendar, BarChart3, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddInvestmentDialog } from "@/components/AddInvestmentDialog";
+import { AddDividendDialog } from "@/components/AddDividendDialog";
 import { CategoryManager } from "@/components/CategoryManager";
 import { BudgetManager, CategoryBudgetManager, CarryoverManager, CarryoverEditDialog } from "@/components/BudgetManager";
 import { DashboardView } from "@/components/DashboardView";
 import { CalendarView } from "@/components/CalendarView";
 import { AnalyticsView } from "@/components/AnalyticsView";
-import { Investment, Category, MonthlyBudget, InvestmentStats } from "@/types/investment";
+import { DividendDashboard } from "@/components/DividendDashboard";
+import { DividendAnalytics } from "@/components/DividendAnalytics";
+import { Investment, Category, MonthlyBudget, InvestmentStats, Dividend, DividendStats } from "@/types/investment";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ViewType = "dashboard" | "calendar" | "analytics";
+type ViewType = "dashboard" | "calendar" | "analytics" | "dividends" | "dividend-analytics";
 
 const Index = () => {
   const [activeView, setActiveView] = useState<ViewType>("dashboard");
   const [investments, setInvestments] = useState<Investment[]>([]);
+  const [dividends, setDividends] = useState<Dividend[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [currentBudget, setCurrentBudget] = useState<MonthlyBudget | null>(null);
   const [prevBudget, setPrevBudget] = useState<MonthlyBudget | null>(null);
@@ -35,8 +39,9 @@ const Index = () => {
         console.log('🔄 Loading data for:', currentMonth);
         console.log('📅 Previous month:', prevMonth);
 
-        const [investmentsData, categoriesData, currentBudgetData, prevBudgetData] = await Promise.all([
+        const [investmentsData, dividendsData, categoriesData, currentBudgetData, prevBudgetData] = await Promise.all([
           api.getInvestments(),
+          api.getDividends(),
           api.getCategories(),
           api.getBudgetForMonth(currentMonth),
           api.getBudgetForMonth(prevMonth)
@@ -46,6 +51,7 @@ const Index = () => {
         console.log('📊 Previous budget exists:', !!prevBudgetData);
 
         setInvestments(investmentsData);
+        setDividends(dividendsData);
         setCategories(categoriesData);
 
         if (!currentBudgetData) {
@@ -391,6 +397,95 @@ const stats: InvestmentStats = useMemo(() => {
   };
 }, [investments, categories, currentBudget, currentMonth]);
 
+  // Dividend stats calculation
+  const dividendStats: DividendStats = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const currentMonthNum = new Date().getMonth();
+
+    // Current month dividends
+    const currentMonthDividends = dividends.filter(
+      (div) => format(div.date, "yyyy-MM") === currentMonth
+    );
+    const currentMonthTotal = currentMonthDividends.reduce((sum, div) => sum + div.amount, 0);
+
+    // Current year dividends
+    const currentYearDividends = dividends.filter(
+      (div) => div.date.getFullYear() === currentYear
+    );
+    const currentYearTotal = currentYearDividends.reduce((sum, div) => sum + div.amount, 0);
+
+    // Average per month (based on current year up to current month)
+    const averagePerMonth = currentYearTotal / (currentMonthNum + 1);
+
+    // Company breakdown
+    const companyMap = new Map<string, { amount: number; company: string; stockSymbol: string; count: number }>();
+    currentMonthDividends.forEach((div) => {
+      const key = `${div.company}-${div.stockSymbol}`;
+      const current = companyMap.get(key) || { amount: 0, company: div.company, stockSymbol: div.stockSymbol, count: 0 };
+      companyMap.set(key, { 
+        amount: current.amount + div.amount, 
+        company: div.company, 
+        stockSymbol: div.stockSymbol,
+        count: current.count + 1
+      });
+    });
+
+    // Generate consistent colors for companies
+    const generateColor = (company: string): string => {
+      const colors = [
+        "#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444",
+        "#06b6d4", "#ec4899", "#14b8a6", "#f97316", "#6366f1"
+      ];
+      let hash = 0;
+      for (let i = 0; i < company.length; i++) {
+        hash = company.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      return colors[Math.abs(hash) % colors.length];
+    };
+
+    const companyBreakdown = Array.from(companyMap.entries()).map(([key, data]) => ({
+      company: data.company,
+      stockSymbol: data.stockSymbol,
+      amount: data.amount,
+      percentage: currentMonthTotal > 0 ? (data.amount / currentMonthTotal) * 100 : 0,
+      color: generateColor(data.company),
+      transactionCount: data.count,
+    }));
+
+    // Top paying stock (based on current year)
+    const yearCompanyMap = new Map<string, { amount: number; company: string; stockSymbol: string }>();
+    currentYearDividends.forEach((div) => {
+      const key = `${div.company}-${div.stockSymbol}`;
+      const current = yearCompanyMap.get(key) || { amount: 0, company: div.company, stockSymbol: div.stockSymbol };
+      yearCompanyMap.set(key, { 
+        amount: current.amount + div.amount, 
+        company: div.company, 
+        stockSymbol: div.stockSymbol 
+      });
+    });
+
+    let topPayingStock = null;
+    let maxAmount = 0;
+    yearCompanyMap.forEach((data) => {
+      if (data.amount > maxAmount) {
+        maxAmount = data.amount;
+        topPayingStock = {
+          company: data.company,
+          stockSymbol: data.stockSymbol,
+          amount: data.amount,
+        };
+      }
+    });
+
+    return {
+      totalDividends: dividends.reduce((sum, div) => sum + div.amount, 0),
+      currentMonthDividends: currentMonthTotal,
+      currentYearDividends: currentYearTotal,
+      averagePerMonth,
+      companyBreakdown,
+      topPayingStock,
+    };
+  }, [dividends, currentMonth]);
 
 
   const handleAddInvestment = async (investment: Omit<Investment, "id">) => {
@@ -452,8 +547,32 @@ const stats: InvestmentStats = useMemo(() => {
     }
   };
 
+  const handleAddDividend = async (dividend: Omit<Dividend, "id">) => {
+    try {
+      await api.addDividend(dividend);
+      const updatedDividends = await api.getDividends();
+      setDividends(updatedDividends);
+    } catch (error) {
+      console.error('Failed to add dividend:', error);
+    }
+  };
+
+  const handleDeleteDividend = async (id: string) => {
+    try {
+      await api.deleteDividend(id);
+      const updatedDividends = await api.getDividends();
+      setDividends(updatedDividends);
+    } catch (error) {
+      console.error('Failed to delete dividend:', error);
+    }
+  };
+
   const currentMonthInvestmentCount = investments.filter(
     (inv) => format(inv.date, "yyyy-MM") === currentMonth
+  ).length;
+
+  const currentMonthDividendCount = dividends.filter(
+    (div) => format(div.date, "yyyy-MM") === currentMonth
   ).length;
 
   if (loading) {
@@ -504,10 +623,17 @@ const stats: InvestmentStats = useMemo(() => {
                   onDelete={handleDeleteCategory}
                   onAddSubcategory={handleAddSubcategory}
                 />
-                <AddInvestmentDialog
-                  categories={categories}
-                  onAdd={handleAddInvestment}
-                />
+                {activeView !== "dividends" && activeView !== "dividend-analytics" && (
+                  <AddInvestmentDialog
+                    categories={categories}
+                    onAdd={handleAddInvestment}
+                  />
+                )}
+                {(activeView === "dividends" || activeView === "dividend-analytics") && (
+                  <AddDividendDialog
+                    onAdd={handleAddDividend}
+                  />
+                )}
                 <CarryoverManager
                   currentMonth={currentMonth}
                   budget={currentBudget}
@@ -529,7 +655,7 @@ const stats: InvestmentStats = useMemo(() => {
                 )}
               >
                 <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
+                Investments
               </Button>
               <Button
                 variant={activeView === "calendar" ? "default" : "ghost"}
@@ -554,6 +680,30 @@ const stats: InvestmentStats = useMemo(() => {
               >
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Analytics
+              </Button>
+              <Button
+                variant={activeView === "dividends" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setActiveView("dividends")}
+                className={cn(
+                  "flex-shrink-0",
+                  activeView === "dividends" && "bg-gradient-success"
+                )}
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                Dividends
+              </Button>
+              <Button
+                variant={activeView === "dividend-analytics" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setActiveView("dividend-analytics")}
+                className={cn(
+                  "flex-shrink-0",
+                  activeView === "dividend-analytics" && "bg-gradient-success"
+                )}
+              >
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Dividend Analytics
               </Button>
               <Button
                 variant="outline"
@@ -615,6 +765,21 @@ const stats: InvestmentStats = useMemo(() => {
           <AnalyticsView
             investments={investments}
             categories={categories}
+          />
+        )}
+
+        {activeView === "dividends" && (
+          <DividendDashboard
+            stats={dividendStats}
+            dividends={dividends}
+            currentMonthDividendCount={currentMonthDividendCount}
+            onDelete={handleDeleteDividend}
+          />
+        )}
+
+        {activeView === "dividend-analytics" && (
+          <DividendAnalytics
+            dividends={dividends}
           />
         )}
       </main>

@@ -1,4 +1,4 @@
-import { Investment, Category, MonthlyBudget } from "@/types/investment";
+import { Investment, Category, MonthlyBudget, Dividend } from "@/types/investment";
 
 const API_BASE = 'https://investment-tracker-2-grqv.onrender.com/api';
 
@@ -117,5 +117,34 @@ export const api = {
       ...data,
       id: data._id
     } : null;
+  },
+
+  // Dividends
+  getDividends: async (): Promise<Dividend[]> => {
+    const response = await fetch(`${API_BASE}/dividends`);
+    const data = await response.json();
+    return data.map((div: any) => ({
+      ...div,
+      id: div._id,
+      date: new Date(div.date)
+    }));
+  },
+  
+  addDividend: async (dividend: Omit<Dividend, "id">): Promise<Dividend> => {
+    const response = await fetch(`${API_BASE}/dividends`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dividend)
+    });
+    const data = await response.json();
+    return {
+      ...data,
+      id: data._id,
+      date: new Date(data.date)
+    };
+  },
+  
+  deleteDividend: async (id: string): Promise<void> => {
+    await fetch(`${API_BASE}/dividends/${id}`, { method: 'DELETE' });
   }
 };

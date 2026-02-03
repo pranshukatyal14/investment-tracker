@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import investmentRoutes from './routes/investments.js';
 import categoryRoutes from './routes/categories.js';
 import budgetRoutes from './routes/budgets.js';
+import dividendRoutes from './routes/dividends.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ mongoose.connect(process.env.MONGODB_URI)
 app.use('/api/investments', investmentRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/budgets', budgetRoutes);
+app.use('/api/dividends', dividendRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
